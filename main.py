@@ -1,5 +1,6 @@
 from processdata import *
 from train import *
+from hyperparameter import *
 
 r = Read_data()
 r.process_file('data/raw.clean.train')
@@ -13,6 +14,7 @@ dev_encodes = train_encoder.encode(r_dev.result,ngram_dict)
 # for e in encodes:
 #     e.show()
 train = Train()
-train_encodes = train.encode_random(train_encodes)
+parameter = Parameter()
+# train_encodes = train.encode_random(train_encodes)
 train.create_weight_matrix(len(ngram_dict),5)
-train.train(train_encodes,512,dev_encodes)
+train.train(parameter,train_encodes,dev_encodes)
