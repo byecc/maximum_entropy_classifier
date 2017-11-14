@@ -9,10 +9,13 @@ class Train:
     def __init__(self):
         self.weight_matrix = 0
         self.grad_matrix = np.array((0,0))
+        self.cumulative_matrix = 0
+        self.bias = [1e-10,1e-10,1e-10,1e-10,1e-10]
 
     def create_weight_matrix(self,depth,width):
         self.weight_matrix = np.random.random((depth,width))
         self.grad_matrix = np.zeros((depth,width))
+        self.cumulative_matrix = np.zeros((depth,width))
         # bias_list = []
         # for i in range(width):
         #     bias_list.append(1e-09)
@@ -26,27 +29,27 @@ class Train:
             right_boud = parameter.batch_size
             max_len = len(train_encodes)
             while left_bound<max_len:
-                outputs = self.forward(train_encodes[left_bound:right_boud])
+                outputs = self.forward(train_encodes[left_bound:right_boud],parameter.batch_size)
                 self.backward(train_encodes[left_bound:right_boud],outputs,parameter)
                 left_bound+=parameter.batch_size
                 right_boud+=parameter.batch_size
                 if right_boud >= max_len:
                     right_boud = max_len-1
+                self.grad_matrix = np.zeros(self.grad_matrix.shape) #每个batch一次梯度清零
             accuracy = self.eval(train_encodes,'train')
             self.eval(dev_encodes,'dev')
-            train_encodes = self.encode_random(train_encodes)
-            self.grad_matrix = np.zeros(self.grad_matrix.shape)
+            train_encodes = self.encode_random(train_encodes) #随机梯度下降
             if accuracy == 1.0:
                 break
             print('-------------------------')
 
-    def forward(self, encodes):
+    def forward(self, encodes,batch_size):
         result_labels = []
         for e in encodes:
             sum = np.array([0.0,0.0,0.0,0.0,0.0])
             for i in e.code_list:
                 sum += self.weight_matrix[i]
-            result_labels.append(self.softmax(sum))
+            result_labels.append(self.softmax((1/batch_size)*sum))
         return result_labels
 
     def softmax(self,result_label):
@@ -77,13 +80,15 @@ class Train:
     def backward(self,encodes,outputs,parameter):
         o_labels = []
         for ec in encodes:
+            # o_labels.append(np.subtract(ec.label,self.bias))
             o_labels.append(ec.label)
         value = np.array(outputs)-np.array(o_labels)
         for i,e in enumerate(encodes):
             for cl in e.code_list:
                 self.grad_matrix[cl] += value[i]
-        self.weight_matrix -= self.Adgrad_update(self.grad_matrix,parameter.learn_rate,parameter.kthi)
-        # self.weight_matrix -= parameter.learn_rate*self.grad_matrix
+                self.Adagrad(self.grad_matrix[cl],cl)
+        self.weight_matrix -= (parameter.learn_rate/(parameter.kthi+np.sqrt(self.cumulative_matrix)))*self.grad_matrix #Adagrad
+        # self.weight_matrix -= parameter.learn_rate*self.grad_matrix  #批梯度下降
         # for i,e in enumerate(encodes):
         #     for cl in e.code_list:
         #         self.weight_matrix[cl] -= lr * (np.array(outputs[i])-np.array(e.label))
@@ -120,10 +125,5 @@ class Train:
     def print_loss(self,list):
         print('loss:',-1*math.log2(max(list)))
 
-    def Adgrad_update(self,grad_matrix,lr,kthi):
-        for gm in grad_matrix:
-            sum = 0.0
-            for g in gm:
-                sum += g*g
-            gm = (lr/(math.sqrt(sum+kthi)))*gm
-        return grad_matrix
+    def Adagrad(self,grad,index):
+        self.cumulative_matrix[index] += np.square(grad)
