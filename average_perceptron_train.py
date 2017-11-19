@@ -3,45 +3,73 @@ import math
 from processdata import Encode
 from numpy import *
 
-random.seed(5)
-
 class APTrain:
     def __init__(self):
         self.weight_matrix = np.array((0,0))
-        self.grad_matrix = np.array((0,0))
-        self.average_matrix = np.array((0,0))
-        self.bias = np.array([0.0,0.0,0.0,0.0,0.0])
+        self.sum_weight_matrix = np.array((0,0))
+        self.last_update_weight = []
 
     def create_weight_matrix(self,depth,width):
         self.weight_matrix = np.zeros((depth,width))
-        self.grad_matrix = np.zeros((depth,width))
-        self.average_matrix = np.zeros((depth,width))
+        self.sum_weight_matrix = np.zeros((depth,width))
+        self.last_update_weight = [0 for i in range(depth)]
 
     def train(self,parameter,train_encodes,dev_encodes):
+        step = 1
         for i in range(parameter.ap_iter_num):
             print('第%d轮迭代：'%(i+1))
-            step = denominator = parameter.ap_iter_num*len(train_encodes)
-            total = cor = 0
+            total = cor = sum_loss = 0
+            self.last_update_weight = [0 for i in range(len(self.last_update_weight))]
             for encode in train_encodes:
                 sum = np.array([0.0,0.0,0.0,0.0,0.0])
                 for e in encode.code_list:
                     sum += self.weight_matrix[e]
-                y = self.softmax(sum+self.bias)
-                # if self.get_maxIndex(y) != self.get_maxIndex(encode.label):
-                for e in encode.code_list:
-                    self.weight_matrix[e] += np.subtract(encode.label,y)
-                    self.bias += np.subtract(encode.label,y)
-                    self.average_matrix[e] += (step/denominator)*np.subtract(encode.label,y)
-                if self.get_maxIndex(y) == self.get_maxIndex(encode.label):
+                y = self.softmax(sum)
+                if self.get_maxIndex(y) != self.get_maxIndex(encode.label):
+                    for e in encode.code_list:
+                        times = step - self.last_update_weight[e]
+                        self.weight_matrix[e] += np.subtract(encode.label, y)
+                        self.sum_weight_matrix[e] += self.weight_matrix[e]*times
+                        self.last_update_weight[e] = step
+                else:
                     cor+=1
                 total+=1
-                step -= 1
-            print('train accuarcy:',cor/total)
-            self.eval(dev_encodes,'dev')
+                step += 1
+                sum_loss += self.loss(y)
+                # if step % parameter.test_interval == 0:
+                #     self.eval(dev_encodes, 'dev')
+            print('train accuarcy:',cor/total   )
+            print('loss:',sum_loss )
+            self.eval(dev_encodes, 'dev')
             if cor/total == 1.0:
                 break
             train_encodes = self.encode_random(train_encodes)
-            print('-------------------------')
+        print('-------------------------')
+
+    def another_train(self,parameter,train_encodes,dev_encodes):
+        step = 0
+        for i in range(parameter.ap_iter_num):
+            print('第%d轮迭代：'%(i+1))
+            total = cor = 0
+            self.last_update_weight = [0 for i in range(len(self.last_update_weight))]
+            for encode in train_encodes:
+                sum = np.array([0.0,0.0,0.0,0.0,0.0])
+                for e in encode.code_list:
+                    sum += self.weight_matrix[e]
+                y = self.softmax(sum)
+                if self.get_maxIndex(y) != self.get_maxIndex(encode.label):
+                    for e in encode.code_list:
+                        self.weight_matrix[e] += np.subtract(encode.label, y)
+                else:
+                    cor+=1
+                total+=1
+                step += 1
+            print('train accuarcy:',cor/total   )
+            self.eval(dev_encodes, 'dev')
+            if cor/total == 1.0:
+                break
+            train_encodes = self.encode_random(train_encodes)
+        print('-------------------------')
 
     def softmax(self,result_label):
         max = self.get_max(result_label)
@@ -74,8 +102,8 @@ class APTrain:
         for e in encodes:
             sum = np.array([0.0,0.0,0.0,0.0,0.0])
             for cl in e.code_list:
-                sum+=self.average_matrix[cl]
-            if self.get_maxIndex(self.softmax(sum+self.bias)) == self.get_maxIndex(e.label):
+                sum+=self.sum_weight_matrix[cl]
+            if self.get_maxIndex(self.softmax(sum)) == self.get_maxIndex(e.label):
                 cor+=1
             total+=1
         if dataset_name=='dev' and cor/total > 0.38:
@@ -87,7 +115,7 @@ class APTrain:
         index_list = []
         for i in range(len(o_encodes)):
             index_list.append(i)
-        random.seed(200)
+        random.seed(100)
         random.shuffle(index_list)
         n_encodes = []
         for i in index_list:
@@ -97,7 +125,5 @@ class APTrain:
             n_encodes.append(encode)
         return n_encodes
 
-    def print_loss(self,list):
-        print('loss:',-1*math.log2(max(list)))
-
-
+    def loss(self,list):
+        return -1*math.log2(max(list))
