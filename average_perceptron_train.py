@@ -15,56 +15,52 @@ class APTrain:
         self.last_update_weight = [0 for i in range(depth)]
 
     def train(self,parameter,train_encodes,dev_encodes):
-        step = 1
-        for i in range(parameter.ap_iter_num):
-            print('第%d轮迭代：'%(i+1))
-            total = cor = sum_loss = 0
-            self.last_update_weight = [0 for i in range(len(self.last_update_weight))]
-            for encode in train_encodes:
-                sum = np.array([0.0,0.0,0.0,0.0,0.0])
-                for e in encode.code_list:
-                    sum += self.weight_matrix[e]
-                y = self.softmax(sum)
-                if self.get_maxIndex(y) != self.get_maxIndex(encode.label):
-                    for e in encode.code_list:
-                        times = step - self.last_update_weight[e]
-                        self.weight_matrix[e] += np.subtract(encode.label, y)
-                        self.sum_weight_matrix[e] += self.weight_matrix[e]*times
-                        self.last_update_weight[e] = step
-                else:
-                    cor+=1
-                total+=1
-                step += 1
-                sum_loss += self.loss(y)
-                # if step % parameter.test_interval == 0:
-                #     self.eval(dev_encodes, 'dev')
-            print('train accuarcy:',cor/total   )
-            print('loss:',sum_loss )
-            self.eval(dev_encodes, 'dev')
-            if cor/total == 1.0:
-                break
-            train_encodes = self.encode_random(train_encodes)
-        print('-------------------------')
-
-    def another_train(self,parameter,train_encodes,dev_encodes):
         step = 0
         for i in range(parameter.ap_iter_num):
             print('第%d轮迭代：'%(i+1))
-            total = cor = 0
-            self.last_update_weight = [0 for i in range(len(self.last_update_weight))]
-            for encode in train_encodes:
-                sum = np.array([0.0,0.0,0.0,0.0,0.0])
-                for e in encode.code_list:
-                    sum += self.weight_matrix[e]
-                y = self.softmax(sum)
-                if self.get_maxIndex(y) != self.get_maxIndex(encode.label):
+            total = cor = loss = left_bound = 0
+            right_bound = parameter.ap_batch_size
+            max_len = len(train_encodes)
+            while left_bound<max_len:    #batch
+                for encode in train_encodes[left_bound:right_bound]:
+                    sum = np.array([0.0,0.0,0.0,0.0,0.0])
                     for e in encode.code_list:
-                        self.weight_matrix[e] += np.subtract(encode.label, y)
-                else:
-                    cor+=1
-                total+=1
-                step += 1
-            print('train accuarcy:',cor/total   )
+                        sum += self.weight_matrix[e]
+                    if self.get_maxIndex(sum) != self.get_maxIndex(encode.label):
+                        for wi in encode.code_list:
+                            times = step - self.last_update_weight[wi]
+                            self.sum_weight_matrix[wi] += self.weight_matrix[wi]*times
+                            self.weight_matrix[wi][self.get_maxIndex(sum)] -= 1
+                            self.sum_weight_matrix[wi] += self.weight_matrix[wi]
+                            self.last_update_weight[wi] = step
+                        loss +=1
+                    else:
+                        cor+=1
+                    total+=1
+                    step += 1
+                left_bound += parameter.batch_size
+                right_bound += parameter.batch_size
+                if right_bound >= max_len:
+                    right_bound = max_len - 1
+
+            # for encode in train_encodes:
+            #     sum = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
+            #     for e in encode.code_list:
+            #         sum += self.weight_matrix[e]
+            #     if self.get_maxIndex(sum) != self.get_maxIndex(encode.label):
+            #         for wi in encode.code_list:
+            #             times = step - self.last_update_weight[wi]
+            #             self.sum_weight_matrix[wi] += self.weight_matrix[wi] * times
+            #             self.weight_matrix[wi][self.get_maxIndex(sum)] -= 1
+            #             self.sum_weight_matrix[wi] += self.weight_matrix[wi]
+            #             self.last_update_weight[wi] = step
+            #         loss += 1
+            #     else:
+            #         cor += 1
+            #     total += 1
+            #     step += 1
+            print('train accuarcy:',cor/total)
+            print('loss:',loss )
             self.eval(dev_encodes, 'dev')
             if cor/total == 1.0:
                 break
@@ -106,7 +102,7 @@ class APTrain:
             if self.get_maxIndex(self.softmax(sum)) == self.get_maxIndex(e.label):
                 cor+=1
             total+=1
-        if dataset_name=='dev' and cor/total > 0.38:
+        if dataset_name=='dev' and cor/total > 0.4:
             print('*******')
         print(dataset_name+' accuracy:', cor/total)
         return cor/total
